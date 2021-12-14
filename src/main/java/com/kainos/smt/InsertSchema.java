@@ -3,8 +3,8 @@ package com.kainos.smt;
 import io.confluent.connect.avro.AvroData;
 import org.apache.kafka.common.config.ConfigDef;
 import org.apache.kafka.connect.connector.ConnectRecord;
-import org.apache.kafka.connect.data.Field;
 import org.apache.kafka.connect.data.Schema;
+import org.apache.kafka.connect.data.SchemaAndValue;
 import org.apache.kafka.connect.data.Struct;
 import org.apache.kafka.connect.transforms.Transformation;
 import org.apache.kafka.connect.transforms.util.SimpleConfig;
@@ -48,25 +48,19 @@ public class InsertSchema<R extends ConnectRecord<R>> implements Transformation<
 
     @Override
     public R apply(R record) {
-        final Map<String, ?> value = requireMap(record.value(), PURPOSE);
-        Schema updatedSchema = convertAvroSchemaToConnectSchema(avroSchemaPath);
+        final Map<String, ?> valueJson = requireMap(record.value(), PURPOSE);
+        org.apache.avro.Schema updatedSchema = readAvroSchemaFrom(avroSchemaPath);
+        SchemaAndValue schemaAndValue = avroData.toConnectData(updatedSchema, valueJson);
+        Schema schema = schemaAndValue.schema();
+        Struct value = (Struct) schemaAndValue.value();
 
-        final Struct updatedValue = new Struct(updatedSchema);
-
-
-        for (Field field : updatedSchema.fields()) {
-
-            updatedValue.put(field.name(), value.get(field.name()));
-        }
-
-
-        return newRecord(record, updatedSchema, updatedValue);
+        return newRecord(record, schema, value);
     }
 
-    private Schema convertAvroSchemaToConnectSchema(String pathToAvscFile) {
-        Schema schema = null;
+    private org.apache.avro.Schema readAvroSchemaFrom(String pathToAvscFile) {
+        org.apache.avro.Schema schema = null;
         try {
-            schema = tryToConvertAvroSchemaToConnectSchema(pathToAvscFile);
+            schema = tryToReadAvroSchemaFrom(pathToAvscFile);
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
@@ -74,11 +68,12 @@ public class InsertSchema<R extends ConnectRecord<R>> implements Transformation<
         return schema;
     }
 
-    private Schema tryToConvertAvroSchemaToConnectSchema(String pathToAvscFile) throws IOException {
+    private org.apache.avro.Schema tryToReadAvroSchemaFrom(String pathToAvscFile) throws IOException {
         org.apache.avro.Schema schema = new org.apache.avro.Schema.Parser().parse(
                 new File(pathToAvscFile)
         );
-        return avroData.toConnectSchema(schema);
+
+        return schema;
     }
 
     protected R newRecord(R record, Schema updatedSchema, Struct updatedValue) {
